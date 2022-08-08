@@ -1,0 +1,65 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Configures ALB for Rackspace test
+Parameters:
+  AppName:
+    Description: Name of the application
+    Type: String
+    Default: webapp
+  Env:
+    Description: Name of the environment
+    Type: String
+    AllowedValues: ['dev', 'test', 'staging', 'prod']
+    Default: dev
+Resources:
+  ApplicationLoadBalancer:
+    Type: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
+    Properties:
+      Name: !Sub '${AppName}-${Env}-alb'
+      SecurityGroups:
+      - Fn::ImportValue: !Sub '${AppName}-${Env}-pubweb-sg'
+      Subnets:
+      - Fn::ImportValue: !Sub '${AppName}-${Env}-pub-sub1'
+      - Fn::ImportValue: !Sub '${AppName}-${Env}-pub-sub2'
+      - Fn::ImportValue: !Sub '${AppName}-${Env}-pub-sub3'
+  AlbListener80:
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+      - Type: forward
+        ForwardConfig:
+          TargetGroups:
+          - TargetGroupArn: !Ref TargetGroup80
+  TargetGroup80:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      HealthCheckEnabled: true
+      HealthCheckIntervalSeconds: 30
+      HealthCheckPath: /
+      HealthCheckPort: '80'
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 3
+      Name: !Sub '${AppName}-${Env}-tg80'
+      Port: 80
+      Protocol: HTTP
+      VpcId: 
+        Fn::ImportValue: !Sub '${AppName}-${Env}-VpcId'
+Outputs:
+  AlbArn:
+    Description: ARN of the ALB
+    Value: !Ref ApplicationLoadBalancer
+    Export:
+      Name: !Sub '${AppName}-${Env}-AlbArn'
+  AlbDnsName:
+    Description: DNS endpoint of the ALB
+    Value: !GetAtt ApplicationLoadBalancer.DNSName
+    Export:
+      Name: !Sub '${AppName}-${Env}-AlbDnsName'
+  TargetGroup80Arn:
+    Description: ARN of the web target group
+    Value: !Ref TargetGroup80
+    Export:
+      Name: !Sub '${AppName}-${Env}-tg80'

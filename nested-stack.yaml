@@ -1,0 +1,53 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Nested stack template for the Rackspace assessment
+Parameters:
+  AppName:
+    Description: Name of the application
+    Type: String
+    Default: webapp
+  Env:
+    Description: Name of the environment
+    Type: String
+    AllowedValues: ['dev', 'test', 'staging', 'prod']
+    ConstraintDescription: Must be either dev, test, staging, or prod
+    Default: dev
+  VpcCidr:
+    Description: Network CIDR address for VPC
+    Type: String
+    AllowedPattern: '((\d{1,3})\.){3}\d{1,3}/\d{1,2}'
+    MinLength: '9'
+    MaxLength: '18'
+    ConstraintDescription: Must be a valid IPv4 network address in CIDR notation
+    Default: 10.1.0.0/16
+  WebInstanceType:
+    Description: Choose the instance type to use for the instances
+    Type: String
+    AllowedValues: ['t3.micro', 't3.small', 't3.medium', 't3.large']
+    ConstraintDescription: Must be an instance type that is an allowed pattern from the stack parameters
+    Default: t3.micro
+Resources:
+  VpcStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: https://438077735772-rackspace-assessment-artifacts.s3.amazonaws.com/vpc-stack.yaml
+      Parameters:
+        AppName: !Ref AppName
+        Env: !Ref Env
+        VpcCidr: !Ref VpcCidr
+  AlbStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn: VpcStack
+    Properties:
+      TemplateURL: https://438077735772-rackspace-assessment-artifacts.s3.amazonaws.com/alb-stack.yaml
+      Parameters:
+        AppName: !Ref AppName
+        Env: !Ref Env
+  AsgStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn: AlbStack
+    Properties:
+      TemplateURL: https://438077735772-rackspace-assessment-artifacts.s3.amazonaws.com/asg-stack.yaml
+      Parameters:
+        AppName: !Ref AppName
+        Env: !Ref Env
+        WebInstanceType: !Ref WebInstanceType

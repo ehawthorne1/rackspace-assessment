@@ -1,0 +1,243 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Creates an ASG
+Parameters:
+  AppName:
+    Description: Name of the application
+    Type: String
+    Default: webapp
+  Env:
+    Description: Name of the environment
+    Type: String
+    AllowedValues: ['dev', 'test', 'staging', 'prod']
+    Default: dev
+    ConstraintDescription: Must be either dev, test, staging, or prod
+  WebInstanceType:
+    Description: Choose the instance type to use for the instances
+    Type: String
+    AllowedValues: ['t3.micro', 't3.small', 't3.medium', 't3.large']
+    Default: t3.micro
+    ConstraintDescription: Must be an instance type that is an allowed pattern from the stack parameters
+  WebAmiId:
+    Description: SSM parameter store query for the latest Amazon Linux 2 AMI
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-ebs'
+Resources:
+  WebInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: 'ec2.amazonaws.com'
+          Action: 'sts:AssumeRole'
+      Description: IAM role to attach to web instances
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+      - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+      RoleName: !Sub '${AppName}-${Env}-WebInstanceRole'
+  WebInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub '${AppName}-${Env}-WebInstanceProfile'
+      Roles:
+      - !Ref WebInstanceRole
+  KeyPair:
+    Type: AWS::EC2::KeyPair
+    Properties:
+      KeyName: !Sub '${AppName}-${Env}-web-key'
+  WebInstanceLt:
+    Type: 'AWS::EC2::LaunchTemplate'
+    Metadata:
+      'AWS::CloudFormation::Init':
+        configSets:
+          setup:
+            - cfn_hup
+            - repo_config
+            - install_packages
+            - add_index
+            - enable_service
+        cfn_hup:
+          files:
+            /etc/cfn/cfn-hup.conf:
+              content: !Join 
+                - ''
+                - - |
+                    [main]
+                  - stack=
+                  - !Ref 'AWS::StackId'
+                  - |+
+
+                  - region=
+                  - !Ref 'AWS::Region'
+                  - |+
+
+                  - |
+                    interval=1
+              mode: '000400'
+              owner: root
+              group: root
+            /etc/cfn/hooks.d/cfn-auto-reloader.conf:
+              content: !Join 
+                - ''
+                - - |
+                    [cfn-auto-reloader-hook]
+                  - |
+                    triggers=post.update
+                  - >
+                    path=Resources.WebInstanceLt.Metadata.AWS::CloudFormation::Init
+                  - 'action=/opt/aws/bin/cfn-init -v '
+                  - '   --stack '
+                  - !Ref 'AWS::StackName'
+                  - '   --resource WebInstanceLt '
+                  - '   --configsets setup '
+                  - '   --region '
+                  - !Ref 'AWS::Region'
+                  - |+
+
+                  - |
+                    runas=root
+              mode: '000400'
+              owner: root
+              group: root
+          services:
+            sysvinit:
+              cfn-hup:
+                enabled: 'true'
+                ensureRunning: 'true'
+                files:
+                  - /etc/cfn/cfn-hup.conf
+                  - /etc/cfn/hooks.d/cfn-auto-reloader.conf
+        repo_config:
+          commands:
+            install_epel:
+              command: amazon-linux-extras install epel -y
+            enable_nginx_repo:
+              command: amazon-linux-extras enable nginx1
+        install_packages:
+          packages:
+            yum:
+              nginx: []
+              httpd-tools: []
+              git: []
+        add_index:
+          files:
+            /usr/share/nginx/html/index.html:
+              content: !Join 
+                - ''
+                - - |
+                    Hello World/Rackspace!
+        enable_service:
+          services:
+            sysvinit:
+              nginx:
+                enabled: 'true'
+                ensureRunning: 'true'
+    Properties:
+      LaunchTemplateName: !Sub '${AppName}-${Env}-web-lt'
+      LaunchTemplateData:
+        InstanceType: !Ref WebInstanceType
+        ImageId: !Ref WebAmiId
+        KeyName: !Ref KeyPair
+        SecurityGroupIds:
+        - Fn::ImportValue: !Sub '${AppName}-${Env}-privweb-sg'
+        IamInstanceProfile:
+          Name: !Ref WebInstanceProfile
+        BlockDeviceMappings:
+          - DeviceName: /dev/xvda
+            Ebs:
+              VolumeType: gp3
+              VolumeSize: 20
+              Encrypted: true
+        MetadataOptions:
+          HttpTokens: required
+        UserData: !Base64 
+          'Fn::Join':
+            - ''
+            - - |
+                #!/bin/bash -xe
+              - |
+                yum install aws-cfn-bootstrap -y
+              - |
+                yum update aws-cfn-bootstrap -y
+              - '/opt/aws/bin/cfn-init -v '
+              - '   --stack '
+              - !Ref 'AWS::StackId'
+              - '   --resource WebInstanceLt '
+              - '   --configsets setup '
+              - '   --region '
+              - !Ref 'AWS::Region'
+              - |+
+
+              - >
+
+                echo " Welcome to $(hostname) created on $(date +%D) at $(date +%T) $(date +%Z) with the instance ID of $(TOKEN=`curl -s -X PUT
+                "http://169.254.169.254/latest/api/token" -H
+                "X-aws-ec2-metadata-token-ttl-seconds: 21600"` && curl -s -H
+                "X-aws-ec2-metadata-token: $TOKEN"
+                http://169.254.169.254/latest/meta-data/instance-id)" >>
+                /usr/share/nginx/html/index.html
+              - '/opt/aws/bin/cfn-signal -e $? '
+              - '   --stack '
+              - !Ref 'AWS::StackId'
+              - '   --resource WebAsg '
+              - '   --region '
+              - !Ref 'AWS::Region'
+              - |+
+
+        TagSpecifications:
+        - ResourceType: instance
+          Tags:
+            - Key: Name
+              Value: !Sub ${AppName}-${Env}-web-node
+  WebAsg:
+    Type: 'AWS::AutoScaling::AutoScalingGroup'
+    Properties:
+      AutoScalingGroupName: !Sub '${AppName}-${Env}-web-asg'
+      LaunchTemplate:
+        LaunchTemplateId: !Ref WebInstanceLt
+        Version: !GetAtt WebInstanceLt.LatestVersionNumber
+      VPCZoneIdentifier:
+      - Fn::ImportValue: !Sub '${AppName}-${Env}-priv-sub1'
+      - Fn::ImportValue: !Sub '${AppName}-${Env}-priv-sub2'
+      - Fn::ImportValue: !Sub '${AppName}-${Env}-priv-sub3'
+      TargetGroupARNs:
+      - Fn::ImportValue: !Sub '${AppName}-${Env}-tg80'
+      DesiredCapacity: '3'
+      MinSize: '3'
+      MaxSize: '33'
+    CreationPolicy:
+      ResourceSignal:
+        Count: 3
+        Timeout: PT15M
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MinInstancesInService: 2
+        WaitOnResourceSignals: true
+  WebAsgScalingPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AutoScalingGroupName: !Ref WebAsg
+      PolicyType: TargetTrackingScaling
+      TargetTrackingConfiguration:
+        PredefinedMetricSpecification: 
+          PredefinedMetricType: ASGAverageCPUUtilization
+        TargetValue: 75.0
+Outputs:
+  KeyPairName:
+    Description: Name of the key pair
+    Value: !Ref KeyPair
+    Export:
+      Name: !Sub '${AppName}-${Env}-KeyPair'
+  WebInstanceRoleName:
+    Description: Name of the web instance IAM role
+    Value: !Ref WebInstanceRole
+    Export:
+      Name: !Sub '${AppName}-${Env}-WebInstanceRoleName'
+  WebInstanceRoleArn:
+    Description: ARN of the web instance IAM role
+    Value: !GetAtt WebInstanceRole.Arn
+    Export:
+      Name: !Sub '${AppName}-${Env}-WebInstanceRoleArn'

@@ -1,0 +1,373 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: VPC stack for Rackspace test
+Parameters:
+  AppName:
+    Description: Name of the application
+    Type: String
+    Default: webapp
+  Env:
+    Description: Name of the environment
+    Type: String
+    AllowedValues: ['dev', 'test', 'staging', 'prod']
+    Default: dev
+    ConstraintDescription: Must be either dev, test, staging, or prod
+  VpcCidr:
+    Description: Network CIDR address for VPC
+    Type: String
+    AllowedPattern: '((\d{1,3})\.){3}\d{1,3}/\d{1,2}'
+    MinLength: '9'
+    MaxLength: '18'
+    Default: 10.1.0.0/16
+    ConstraintDescription: Must be a valid IPv4 network address in CIDR notation
+Resources:
+  Vpc:
+    Type: 'AWS::EC2::VPC'
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${AppName}-${Env}-vpc'
+  Igw:
+    Type: 'AWS::EC2::InternetGateway'
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${AppName}-${Env}-igw'
+  IgwAttachment:
+    Type: 'AWS::EC2::VPCGatewayAttachment'
+    Properties:
+      InternetGatewayId: !Ref Igw
+      VpcId: !Ref Vpc
+  PublicRt:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: !Sub '${AppName}-${Env}-pub-rt'
+  PrivateRt1:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: !Sub '${AppName}-${Env}-priv-rt1'
+  PrivateRt2:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: !Sub '${AppName}-${Env}-priv-rt2'
+  PrivateRt3:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: !Sub '${AppName}-${Env}-priv-rt3'
+  PublicRoute:
+    Type: 'AWS::EC2::Route'
+    DependsOn: IgwAttachment
+    Properties:
+      RouteTableId: !Ref PublicRt
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref Igw
+  PrivateRoute1:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      RouteTableId: !Ref PrivateRt1
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGw1
+  PrivateRoute2:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      RouteTableId: !Ref PrivateRt2
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGw2
+  PrivateRoute3:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      RouteTableId: !Ref PrivateRt3
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGw3
+  Eip1:
+    Type: 'AWS::EC2::EIP'
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${AppName}-${Env}-eip1'
+  Eip2:
+    Type: 'AWS::EC2::EIP'
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${AppName}-${Env}-eip2'
+  Eip3:
+    Type: 'AWS::EC2::EIP'
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${AppName}-${Env}-eip3'
+  NatGw1:
+    Type: 'AWS::EC2::NatGateway'
+    Properties:
+      AllocationId: !GetAtt 
+        - Eip1
+        - AllocationId
+      SubnetId: !Ref PubSub1
+      Tags:
+        - Key: Name
+          Value: !Sub '${AppName}-${Env}-nat1'
+  NatGw2:
+    Type: 'AWS::EC2::NatGateway'
+    Properties:
+      AllocationId: !GetAtt 
+        - Eip2
+        - AllocationId
+      SubnetId: !Ref PubSub2
+      Tags:
+        - Key: Name
+          Value: !Sub '${AppName}-${Env}-nat2'
+  NatGw3:
+    Type: 'AWS::EC2::NatGateway'
+    Properties:
+      AllocationId: !GetAtt 
+        - Eip3
+        - AllocationId
+      SubnetId: !Ref PubSub3
+      Tags:
+        - Key: Name
+          Value: !Sub '${AppName}-${Env}-nat3'
+  PubSub1:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select 
+        - 0
+        - !GetAZs 
+          Ref: 'AWS::Region'
+      CidrBlock: !Select 
+        - 0
+        - 'Fn::Cidr':
+            - !GetAtt 
+              - Vpc
+              - CidrBlock
+            - 6
+            - 13
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${AppName}-${Env}-pub-sub1'
+  PubSub2:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select 
+        - 1
+        - !GetAZs 
+          Ref: 'AWS::Region'
+      CidrBlock: !Select 
+        - 1
+        - 'Fn::Cidr':
+            - !GetAtt 
+              - Vpc
+              - CidrBlock
+            - 6
+            - 13
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${AppName}-${Env}-pub-sub2'
+  PubSub3:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select 
+        - 2
+        - !GetAZs 
+          Ref: 'AWS::Region'
+      CidrBlock: !Select 
+        - 2
+        - 'Fn::Cidr':
+            - !GetAtt 
+              - Vpc
+              - CidrBlock
+            - 6
+            - 13
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${AppName}-${Env}-pub-sub3'
+  PrivSub1:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select 
+        - 0
+        - !GetAZs 
+          Ref: 'AWS::Region'
+      CidrBlock: !Select 
+        - 3
+        - 'Fn::Cidr':
+            - !GetAtt 
+              - Vpc
+              - CidrBlock
+            - 6
+            - 13
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub '${AppName}-${Env}-priv-sub1'
+  PrivSub2:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select 
+        - 1
+        - !GetAZs 
+          Ref: 'AWS::Region'
+      CidrBlock: !Select 
+        - 4
+        - 'Fn::Cidr':
+            - !GetAtt 
+              - Vpc
+              - CidrBlock
+            - 6
+            - 13
+      Tags:
+        - Key: Name
+          Value: !Sub '${AppName}-${Env}-priv-sub2'
+  PrivSub3:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select 
+        - 2
+        - !GetAZs 
+          Ref: 'AWS::Region'
+      CidrBlock: !Select 
+        - 5
+        - 'Fn::Cidr':
+            - !GetAtt 
+              - Vpc
+              - CidrBlock
+            - 6
+            - 13
+      Tags:
+        - Key: Name
+          Value: !Sub '${AppName}-${Env}-priv-sub3'
+  PubRouteAssociation1:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      RouteTableId: !Ref PublicRt
+      SubnetId: !Ref PubSub1
+  PubRouteAssociation2:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      RouteTableId: !Ref PublicRt
+      SubnetId: !Ref PubSub2
+  PubRouteAssociation3:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      RouteTableId: !Ref PublicRt
+      SubnetId: !Ref PubSub3
+  PrivRouteAssociation1:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      RouteTableId: !Ref PrivateRt1
+      SubnetId: !Ref PrivSub1
+  PrivRouteAssociation2:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      RouteTableId: !Ref PrivateRt2
+      SubnetId: !Ref PrivSub2
+  PrivRouteAssociation3:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      RouteTableId: !Ref PrivateRt3
+      SubnetId: !Ref PrivSub3
+  PrivateWebSg:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Allows for private web access from the public facing ALB
+      GroupName: !Sub '${AppName}-${Env}-privweb-sg'
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref PublicWebSg
+  PublicWebSg:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Allows for public web traffic
+      GroupName: !Sub '${AppName}-${Env}-pubweb-sg'
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+Outputs:
+  VpcId:
+    Description: ID of the VPC
+    Value: !Ref Vpc
+    Export:
+      Name: !Sub '${AppName}-${Env}-VpcId'
+  VpcCidr:
+    Description: CIDR block of the VPC
+    Value: !GetAtt Vpc.CidrBlock
+    Export:
+      Name: !Sub '${AppName}-${Env}-VpcCidr'
+  VpcDefaultSg:
+    Description: ID of the VPC's default security group
+    Value: !GetAtt Vpc.DefaultSecurityGroup
+    Export:
+      Name: !Sub '${AppName}-${Env}-default-sg'
+  PubSub1:
+    Description: ID of the first public subnet
+    Value: !Ref PubSub1
+    Export:
+      Name: !Sub '${AppName}-${Env}-pub-sub1'
+  PubSub2:
+    Description: ID of the second public subnet
+    Value: !Ref PubSub2
+    Export:
+      Name: !Sub '${AppName}-${Env}-pub-sub2'
+  PubSub3:
+    Description: ID of the third public subnet
+    Value: !Ref PubSub3
+    Export:
+      Name: !Sub '${AppName}-${Env}-pub-sub3'
+  PrivSub1:
+    Description: ID of the first private subnet
+    Value: !Ref PrivSub1
+    Export:
+      Name: !Sub '${AppName}-${Env}-priv-sub1'
+  PrivSub2:
+    Description: ID of the second private subnet
+    Value: !Ref PrivSub2
+    Export:
+      Name: !Sub '${AppName}-${Env}-priv-sub2'
+  PrivSub3:
+    Description: ID of the third private subnet
+    Value: !Ref PrivSub3
+    Export:
+      Name: !Sub '${AppName}-${Env}-priv-sub3'
+  PrivateWebSgId:
+    Description: ID of the security group for private web access
+    Value: !Ref PrivateWebSg
+    Export:
+      Name: !Sub '${AppName}-${Env}-privweb-sg'
+  PublicWebSgId:
+    Description: ID of the security group for public web access
+    Value: !Ref PublicWebSg
+    Export:
+      Name: !Sub '${AppName}-${Env}-pubweb-sg'
